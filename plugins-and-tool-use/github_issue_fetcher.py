@@ -50,7 +50,7 @@ def log_json(label: str, color: str, data: object) -> None:
 # ---------------------------------------------------------------------------
 
 REQUEST_TIMEOUT = 10
-MODEL = "claude-opus-4-6"
+MODEL = "claude-haiku-4-5"
 
 
 def _github_headers() -> dict:
