@@ -49,6 +49,10 @@ def log_json(label: str, color: str, data: object) -> None:
 # Tool implementations — these call the real GitHub API
 # ---------------------------------------------------------------------------
 
+REQUEST_TIMEOUT = 10
+MODEL = "claude-opus-4-6"
+
+
 def _github_headers() -> dict:
     headers = {"Accept": "application/vnd.github+json"}
     token = os.getenv("GITHUB_TOKEN")
@@ -57,32 +61,47 @@ def _github_headers() -> dict:
     return headers
 
 
+def _check_github_errors(response: requests.Response, not_found_msg: str) -> dict | None:
+    """Return an error dict for known GitHub error codes, or None if the response is OK."""
+    if response.status_code == 404:
+        return {"error": not_found_msg}
+    if response.status_code == 403:
+        return {"error": "GitHub rate limit exceeded. Set GITHUB_TOKEN in .env to increase the limit."}
+    return None
+
+
+def _format_issue(i: dict) -> dict:
+    """Extract the common fields from a GitHub issue object."""
+    return {
+        "number": i["number"],
+        "title": i["title"],
+        "state": i["state"],
+        "author": i["user"]["login"],
+        "labels": [l["name"] for l in i.get("labels", [])],
+        "comments": i["comments"],
+        "created_at": i["created_at"],
+        "url": i["html_url"],
+    }
+
+
 def get_github_issue(owner: str, repo: str, issue_number: int) -> dict:
     """Fetch a single GitHub issue by number."""
     url = f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}"
     log("TOOL RUN", GREEN, f"GET {url}")
 
-    response = requests.get(url, headers=_github_headers(), timeout=10)
+    response = requests.get(url, headers=_github_headers(), timeout=REQUEST_TIMEOUT)
 
-    if response.status_code == 404:
-        return {"error": f"Issue #{issue_number} not found in {owner}/{repo}"}
-    if response.status_code == 403:
-        return {"error": "GitHub rate limit exceeded. Set GITHUB_TOKEN in .env to increase the limit."}
+    err = _check_github_errors(response, f"Issue #{issue_number} not found in {owner}/{repo}")
+    if err:
+        return err
     response.raise_for_status()
 
     data = response.json()
     # Return only the fields Claude needs — keeps the context window small
     return {
-        "number": data["number"],
-        "title": data["title"],
-        "state": data["state"],
-        "author": data["user"]["login"],
-        "created_at": data["created_at"],
+        **_format_issue(data),
         "updated_at": data["updated_at"],
         "body": (data["body"] or "")[:1000],  # truncate long bodies
-        "labels": [l["name"] for l in data.get("labels", [])],
-        "comments": data["comments"],
-        "url": data["html_url"],
     }
 
 
@@ -93,35 +112,21 @@ def list_github_issues(owner: str, repo: str, state: str = "open", limit: int = 
     params = {"state": state, "per_page": limit, "page": 1}
     log("TOOL RUN", GREEN, f"GET {url} (state={state}, limit={limit})")
 
-    response = requests.get(url, headers=_github_headers(), params=params, timeout=10)
+    response = requests.get(url, headers=_github_headers(), params=params, timeout=REQUEST_TIMEOUT)
 
-    if response.status_code == 404:
-        return {"error": f"Repository {owner}/{repo} not found"}
-    if response.status_code == 403:
-        return {"error": "GitHub rate limit exceeded. Set GITHUB_TOKEN in .env to increase the limit."}
+    err = _check_github_errors(response, f"Repository {owner}/{repo} not found")
+    if err:
+        return err
     response.raise_for_status()
 
-    issues = response.json()
     # Filter out pull requests (GitHub's /issues endpoint includes PRs)
-    issues = [i for i in issues if "pull_request" not in i][:limit]
+    issues = [i for i in response.json() if "pull_request" not in i][:limit]
 
     return {
         "repository": f"{owner}/{repo}",
         "state": state,
         "count": len(issues),
-        "issues": [
-            {
-                "number": i["number"],
-                "title": i["title"],
-                "state": i["state"],
-                "author": i["user"]["login"],
-                "labels": [l["name"] for l in i.get("labels", [])],
-                "comments": i["comments"],
-                "created_at": i["created_at"],
-                "url": i["html_url"],
-            }
-            for i in issues
-        ],
+        "issues": [_format_issue(i) for i in issues],
     }
 
 
@@ -196,6 +201,8 @@ TOOLS = [
     },
 ]
 
+TOOLS_SUMMARY = [{"name": t["name"], "description": t["description"]} for t in TOOLS]
+
 # ---------------------------------------------------------------------------
 # Agentic loop — the core of the Week 1 exercise
 # ---------------------------------------------------------------------------
@@ -209,7 +216,7 @@ def run(prompt: str) -> None:
     messages = [{"role": "user", "content": prompt}]
 
     log("USER PROMPT", CYAN, prompt)
-    log_json("TOOLS SENT TO CLAUDE", CYAN, [{"name": t["name"], "description": t["description"]} for t in TOOLS])
+    log_json("TOOLS SENT TO CLAUDE", CYAN, TOOLS_SUMMARY)
 
     iteration = 0
 
@@ -218,7 +225,7 @@ def run(prompt: str) -> None:
         log("API CALL", MAGENTA, f"Sending {len(messages)} message(s) to Claude (iteration {iteration})")
 
         response = client.messages.create(
-            model="claude-opus-4-6",
+            model=MODEL,
             max_tokens=1024,
             tools=TOOLS,
             messages=messages,
