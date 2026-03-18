@@ -1,5 +1,7 @@
 Test the summarize-pr skill by prompting Claude Code with: "Review the PR from https://github.com/explosion/spaCy/pull/13922"
 
+Test the pr-summarizer agent by prompting Claude Code with: "Agentically review the PR from https://github.com/explosion/spaCy/pull/13922"
+
 
 # Overview of the frontmatter of a Skill
 
