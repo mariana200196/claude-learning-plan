@@ -1,0 +1,18 @@
+GENERAL
+- Claude Code (Build with Claude Code tab): https://code.claude.com/docs
+- Claude API: https://platform.claude.com/docs/en/home
+
+PLUGINS
+- https://buildwithclaude.com/plugins
+    - contains the marketplace for interview-assist: https://github.com/dotclaude/marketplace
+
+SKILLS
+- https://anthropic.skilljar.com/
+
+PROMPTING:
+- https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices
+- https://github.com/anthropics/courses/blob/master/prompt_engineering_interactive_tutorial/README.md
+
+QUICKSTARTS & COOKBOOKS
+- https://github.com/anthropics/claude-quickstarts
+    - includes prompt engineering under 'courses': https://github.com/anthropics/courses/tree/master
